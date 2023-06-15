@@ -1,16 +1,16 @@
 import React, { useEffect } from "react";
 
 // ゲームの盤面サイズ
-const boardSize = 8;
+const boardSize = 8; // 4, 6, 8, 10, ...
 
 // 初期盤面の生成
 const initialBoard = Array.from(Array(boardSize), () =>
   Array(boardSize).fill(null)
 );
-initialBoard[3][3] = "white";
-initialBoard[3][4] = "black";
-initialBoard[4][3] = "black";
-initialBoard[4][4] = "white";
+initialBoard[boardSize / 2 - 1][boardSize / 2 - 1] = "white";
+initialBoard[boardSize / 2 - 1][boardSize / 2] = "black";
+initialBoard[boardSize / 2][boardSize / 2 - 1] = "black";
+initialBoard[boardSize / 2][boardSize / 2] = "white";
 
 const handleGameOver = (
   boardState,
@@ -28,9 +28,11 @@ const handleGameOver = (
   } else {
     alert("引き分け");
   }
-  setBoardState(initialBoard);
-  setCurrentPlayer("black");
-  setIsComputerTurn(false);
+  setTimeout(function () {
+    setBoardState(initialBoard);
+    setCurrentPlayer("black");
+    setIsComputerTurn(false);
+  }, 100);
 };
 
 const Board = () => {
@@ -70,15 +72,12 @@ const Board = () => {
   };
 
   const isCorner = (rowIndex, colIndex) => {
-    const numRows = boardState.length; // 盤面の行数
-    const numCols = boardState[0].length; // 盤面の列数
-
     // 盤面の四隅の位置をチェックする
     const corners = [
       [0, 0], // 左上の角
-      [0, numCols - 1], // 右上の角
-      [numRows - 1, 0], // 左下の角
-      [numRows - 1, numCols - 1], // 右下の角
+      [0, boardSize - 1], // 右上の角
+      [boardSize - 1, 0], // 左下の角
+      [boardSize - 1, boardSize - 1], // 右下の角
     ];
 
     // 指定されたセルの位置が角であるかを判定する
@@ -88,19 +87,16 @@ const Board = () => {
   };
 
   const isAdjacentToCorner = (rowIndex, colIndex) => {
-    const numRows = 8; // 盤面の行数
-    const numCols = 8; // 盤面の列数
-
     // 盤面の隅に隣接する位置をチェックする
     const adjacentPositions = [
       [0, 1], // 左上の隣接位置
       [1, 0], // 左上の隣接位置
-      [0, numCols - 2], // 右上の隣接位置
-      [1, numCols - 1], // 右上の隣接位置
-      [numRows - 2, 0], // 左下の隣接位置
-      [numRows - 1, 1], // 左下の隣接位置
-      [numRows - 2, numCols - 1], // 右下の隣接位置
-      [numRows - 1, numCols - 2], // 右下の隣接位置
+      [0, boardSize - 2], // 右上の隣接位置
+      [1, boardSize - 1], // 右上の隣接位置
+      [boardSize - 2, 0], // 左下の隣接位置
+      [boardSize - 1, 1], // 左下の隣接位置
+      [boardSize - 2, boardSize - 1], // 右下の隣接位置
+      [boardSize - 1, boardSize - 2], // 右下の隣接位置
     ];
 
     // 指定されたセルの位置が角に隣接しているかを判定する
@@ -157,12 +153,9 @@ const Board = () => {
       { row: 1, col: 1 }, // 右下
     ];
 
-    const numRows = boardState.length;
-    const numCols = boardState[0].length;
-
     // {0, 0} から、すべてのセルをチェックする
-    for (let row = 0; row < numRows; row++) {
-      for (let col = 0; col < numCols; col++) {
+    for (let row = 0; row < boardSize; row++) {
+      for (let col = 0; col < boardSize; col++) {
         if (boardState[row][col] != null) {
           // 既に石が置いてあったら、そこには石は置けないのでスキップする
           continue;
@@ -179,8 +172,8 @@ const Board = () => {
             // 盤面外に出たら終了
             currentRow >= 0 &&
             currentCol >= 0 &&
-            currentRow < numRows &&
-            currentCol < numCols
+            currentRow < boardSize &&
+            currentCol < boardSize
           ) {
             const cell = boardState[currentRow][currentCol];
 
@@ -228,9 +221,9 @@ const Board = () => {
 
     while (
       currentRow >= 0 &&
-      currentRow < 8 &&
+      currentRow < boardSize &&
       currentCol >= 0 &&
-      currentCol < 8
+      currentCol < boardSize
     ) {
       if (board[currentRow][currentCol] === null) {
         break; // マス目が空の場合はひっくり返せないため、ループを終了
@@ -388,7 +381,7 @@ const Board = () => {
           setCurrentPlayer,
           setIsComputerTurn
         );
-      }, 10);
+      }, 100);
     }
   }, [boardState]);
 
