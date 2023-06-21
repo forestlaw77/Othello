@@ -570,6 +570,10 @@ const Board = () => {
    */
   const renderIndices = () => {
     const validMoves = getValidMoves(boardState, currentPlayer);
+    const columnIndices = Array.from({ length: boardState[0].length }, (_, i) =>
+      String.fromCharCode(97 + i)
+    );
+
     return (
       <div className="board-indices">
         {/* 列のインデックスを表示 */}
@@ -577,7 +581,7 @@ const Board = () => {
           <div className="corner-index-cell"></div>
           {boardState[0].map((cell, colIndex) => (
             <div key={colIndex} className="col-index-cell">
-              {colIndex}
+              {columnIndices[colIndex]}
             </div>
           ))}
         </div>
@@ -585,7 +589,7 @@ const Board = () => {
         {boardState.map((row, rowIndex) => (
           <div key={rowIndex} className="board-row">
             {/* 行のインデックスを表示 */}
-            <div className="row-index-cell">{rowIndex}</div>
+            <div className="row-index-cell">{rowIndex + 1}</div>
             {/* ゲームボードのセルを表示 */}
             {row.map((cell, colIndex) => {
               const isValidMove = validMoves.some(
