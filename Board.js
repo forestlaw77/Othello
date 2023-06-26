@@ -1,54 +1,64 @@
 import React, { useEffect } from "react";
 
-// ゲームの盤面サイズ
-const boardSize = 8; // 4, 6, 8, 10, ...
+/**
+ * デフォルトの盤面状態を取得します。
+ *
+ * @param {number} size - 盤面のサイズ
+ * @returns {Array<Array<string|null>>} 盤面の初期状態を表す2次元配列
+ */
+const getDefaultBoardState = (size) => {
+  const board = Array.from(Array(size), () => Array(size).fill(null));
+  const center = Math.floor(size / 2);
 
-// 探索の深さ
-const minimaxDepth = 3;
+  board[center - 1][center - 1] = "white";
+  board[center - 1][center] = "black";
+  board[center][center - 1] = "black";
+  board[center][center] = "white";
 
-// 初期盤面の生成
-const initialBoard = Array.from(Array(boardSize), () =>
-  Array(boardSize).fill(null)
-);
-initialBoard[Math.floor(boardSize / 2) - 1][Math.floor(boardSize / 2) - 1] =
-  "white";
-initialBoard[Math.floor(boardSize / 2) - 1][Math.floor(boardSize / 2)] =
-  "black";
-initialBoard[Math.floor(boardSize / 2)][Math.floor(boardSize / 2) - 1] =
-  "black";
-initialBoard[Math.floor(boardSize / 2)][Math.floor(boardSize / 2)] = "white";
+  return board;
+};
 
 /**
- * ゲーム終了時の処理を行います。
- *
- * @param {string[][]} boardState - 現在の盤面の状態
- * @param {Function} calculateWinner - 勝利プレイヤーを計算する関数
- * @param {Function} setBoardState - 盤面の状態を設定する関数
- * @param {Function} setCurrentPlayer - 現在のプレイヤーを設定する関数
- * @param {Function} setIsComputerTurn - コンピュータのターンかどうかを設定する関数
- * @returns {void}
+ * デフォルトのセルの評価値配列を保持するオブジェクト
+ * @type {Object<number, number[][]>} サイズをキーとした評価値配列のマップ
  */
-const handleGameOver = (
-  boardState,
-  calculateWinner,
-  setBoardState,
-  setCurrentPlayer,
-  setIsComputerTurn
-) => {
-  // 勝利プレイヤーの取得
-  const winner = calculateWinner(boardState); // 勝利判定のロジックに基づいて勝利プレイヤーを取得する関数を呼び出す
+const defaultCellValues = {
+  8: [
+    [30, -12, 0, -1, -1, 0, -12, 30],
+    [-12, -15, -3, -3, -3, -3, -15, -12],
+    [0, -3, 0, -1, -1, 0, -3, 0],
+    [-1, -3, -1, -1, -1, -1, -3, -1],
+    [-1, -3, -1, -1, -1, -1, -3, -1],
+    [0, -3, 0, -1, -1, 0, -3, 0],
+    [-12, -15, -3, -3, -3, -3, -15, -12],
+    [30, -12, 0, -1, -1, 0, -12, 30],
+  ],
+};
 
-  // 結果を表示する
-  if (winner) {
-    alert(`勝利プレイヤー: ${winner}`);
-  } else {
-    alert("引き分け");
+/**
+ * ボードのサイズに応じたデフォルトのセルの評価値配列を生成する関数
+ * @param {number} size - ボードのサイズ
+ * @returns {number[][]} サイズに応じたデフォルトのセルの評価値配列
+ */
+const getDefaultCellValues = (size) => {
+  if (defaultCellValues.hasOwnProperty(size)) {
+    return defaultCellValues[size];
   }
-  setTimeout(function () {
-    setBoardState(initialBoard);
-    setCurrentPlayer("black");
-    setIsComputerTurn(false);
-  }, 100);
+
+  const defaultValues = [];
+
+  for (let row = 0; row < size; row++) {
+    const rowValues = [];
+    for (let col = 0; col < size; col++) {
+      const center = Math.floor(size / 2);
+      const distance = Math.max(Math.abs(row - center), Math.abs(col - center));
+      const value = size - distance;
+      rowValues.push(value);
+    }
+    defaultValues.push(rowValues);
+  }
+
+  return defaultValues;
 };
 
 /**
@@ -56,11 +66,120 @@ const handleGameOver = (
  * @returns {JSX.Element} ゲームボードの表示要素
  */
 const Board = () => {
-  const [boardState, setBoardState] = React.useState(initialBoard); // 盤面の初期状態を設定する
+  const minimaxDepth = 3; // 探索の深さ
+  const [boardSize, setBoardSize] = React.useState(8); // ゲームの盤面サイズ
+  const [boardState, setBoardState] = React.useState(
+    getDefaultBoardState(boardSize)
+  ); // 盤面の初期状態を設定する
   const [blackCount, setBlackCount] = React.useState(2);
   const [whiteCount, setWhiteCount] = React.useState(2);
+  const [cellValues, setCellValues] = React.useState(
+    getDefaultCellValues(boardSize)
+  ); // セルの評価値配列
   const [isComputerTurn, setIsComputerTurn] = React.useState(false);
   const [currentPlayer, setCurrentPlayer] = React.useState("black"); // 先手: 'black', 後手: 'white'
+  const [moves, setMoves] = React.useState([]); // 手の配列
+  const [gamePhase, setGamePhase] = React.useState("early");
+
+  // boardSizeを変更する関数
+  const changeBoardSize = (size) => {
+    setBoardSize(size);
+  };
+
+  /**
+   * ボードサイズが変更されたときに実行される副作用のコールバック関数です。
+   */
+  useEffect(() => {
+    const newCellValues = getDefaultCellValues(boardSize);
+    setCellValues(newCellValues);
+
+    const initialBoard = getDefaultBoardState(boardSize);
+    setBoardState(initialBoard);
+  }, [boardSize]);
+
+  const determineGamePhase = (moves, blackCount, whiteCount, boardSize) => {
+    const earlyGameMoves = 10; // 序盤とみなす最小の手数
+    const earlyGamePieceRatio = 0.4; // 序盤とみなす最小の駒の割合
+    const midGameMoves = 54; // 中盤とみなす手数
+    const midGamePieceRatio = 0.9; // 中盤とみなす駒の割合
+
+    const totalMoves = moves.length; // 現在の手数
+    const totalPieces = blackCount + whiteCount; // 現在の駒の総数
+    const pieceRatio = totalPieces / (boardSize * boardSize); // 駒の割合
+
+    if (boardSize < 8) {
+      return "end";
+    } else if (
+      totalMoves < earlyGameMoves ||
+      pieceRatio < earlyGamePieceRatio
+    ) {
+      return "early"; // 手数が少ないか駒の割合が少ない場合は序盤
+    } else if (totalMoves < midGameMoves || pieceRatio < midGamePieceRatio) {
+      return "mid"; // 手数が一定以上か駒の割合が一定以上の場合は中盤
+    } else {
+      return "end";
+    }
+  };
+
+  /**
+   * ゲーム終了時の処理を行います。
+   *
+   * @param {string[][]} boardState - 現在の盤面の状態
+   * @param {Function} calculateWinner - 勝利プレイヤーを計算する関数
+   * @param {Function} setBoardState - 盤面の状態を設定する関数
+   * @param {Function} setCurrentPlayer - 現在のプレイヤーを設定する関数
+   * @param {Function} setIsComputerTurn - コンピュータのターンかどうかを設定する関数
+   * @returns {void}
+   */
+  const handleGameOver = (
+    boardState,
+    calculateWinner,
+    setBoardState,
+    setCurrentPlayer,
+    setIsComputerTurn
+  ) => {
+    // 勝利プレイヤーの取得
+    const winner = calculateWinner(boardState); // 勝利判定のロジックに基づいて勝利プレイヤーを取得する関数を呼び出す
+
+    // 結果を表示する
+    if (winner) {
+      alert(`勝利プレイヤー: ${winner}`);
+    } else {
+      alert("引き分け");
+    }
+    setTimeout(function () {
+      setBoardState(getDefaultBoardState(boardSize));
+      setCurrentPlayer("black");
+      setIsComputerTurn(false);
+      setMoves([]);
+    }, 100);
+  };
+
+  /**
+   * ユーザーの手を記録する関数
+   * @param {number} row - 行のインデックス
+   * @param {number} col - 列のインデックス
+   * @returns {void}
+   */
+  const recordGame = (row, col) => {
+    const newMove = { row, col };
+    setMoves((prevMoves) => [...prevMoves, newMove]);
+  };
+
+  /**
+   * 手の履歴を表示する関数
+   * @returns {JSX.Element[]} 手の履歴の要素の配列
+   */
+  const renderMoveHistory = () => {
+    const columnIndices = Array.from({ length: boardState[0].length }, (_, i) =>
+      String.fromCharCode(97 + i)
+    );
+    return moves.map((move, index) => (
+      <div key={index}>
+        Move {index + 1}: Row {move.row + 1}, Col {columnIndices[move.col]}
+      </div>
+    ));
+  };
 
   /**
    * 盤面が全て埋まっているかどうかを判定します。
@@ -235,6 +354,7 @@ const Board = () => {
     if (isValidMove) {
       // 石を置く処理を実行
       const newBoard = makeMove(boardState, rowIndex, colIndex, currentPlayer);
+      recordGame(rowIndex, colIndex);
       setBoardState(newBoard);
       // プレーヤーの手番を切り替える
       setIsComputerTurn(true);
@@ -361,6 +481,7 @@ const Board = () => {
 
   /**
    * ミニマックス法とα-β刈りを使用して、最適な手を選択するロジックです。
+   * 反復深化法により、時間があればより深く調べます。
    *
    * @param {Array<Array<string|null>>} board - 盤面の状態を表す2次元配列
    * @param {string} player - 現在のプレイヤーを示す文字列 ("black"、"white")
@@ -372,24 +493,41 @@ const Board = () => {
 
     let bestMove = null;
     let bestScore = Number.NEGATIVE_INFINITY;
+    const timeLimit = Date.now() + 300;
 
     const availableMoves = getValidMoves(tempBoard, player); // player のすべての手を列挙する（配置可能な場所を得る）
 
-    for (let i = 0; i < availableMoves.length; i++) {
-      const move = availableMoves[i]; // i番目の手を選択する
-      const newBoard = makeMove(tempBoard, move.row, move.col, player); // player の石を置く
-      const score = minimax(
-        newBoard,
-        player === "black" ? "white" : "black",
-        minimaxDepth,
-        Number.NEGATIVE_INFINITY,
-        Number.POSITIVE_INFINITY,
-        false
-      );
+    for (
+      let depth = minimaxDepth;
+      Date.now() < timeLimit && depth < 60;
+      depth++
+    ) {
+      for (let i = 0; i < availableMoves.length; i++) {
+        const move = availableMoves[i]; // i番目の手を選択する
+        const newBoard = makeMove(tempBoard, move.row, move.col, player); // player の石を置く
 
-      if (score > bestScore) {
-        bestScore = score;
-        bestMove = move;
+        // 全滅チェック
+        if (isSelfDefeatingMove(newBoard, player, move)) {
+          // 全滅になる手は避ける
+          continue;
+        }
+
+        // 相手局面の評価
+        const opponent = player === "black" ? "white" : "black";
+        const score = minimax(
+          newBoard,
+          opponent,
+          depth,
+          Number.NEGATIVE_INFINITY,
+          Number.POSITIVE_INFINITY,
+          false
+        );
+
+        // 相手プレイヤーの手での最悪スコアを選択
+        if (score > bestScore) {
+          bestScore = score;
+          bestMove = move;
+        }
       }
     }
 
@@ -398,6 +536,12 @@ const Board = () => {
 
   /**
    * ミニマックス法によって最適な手を選択します。
+   *
+   * n-1手目 = max(n手目A, n手目B, ...)
+   * n-2手目 = min(n-1手目A, n-1手目B, ...)
+   * n-3手目 = max(n-2手目A, n-2手目B, ...)
+   *
+   * 自分の手番ではスコアが最も高い手を選び、相手の手番ではスコアが最も低い手 (相手にとって最も高い手) を選びます。
    *
    * @param {Array<Array<string|null>>} board - 盤面の状態を表す2次元配列
    * @param {number} depth - 探索の深さ
@@ -409,7 +553,7 @@ const Board = () => {
   const minimax = (board, player, depth, alpha, beta, maximizingPlayer) => {
     if (depth === 0 || checkGameOver(board)) {
       // 検索の深さに達した、またはゲームオーバー
-      return evaluate(board); // 葉の評価値を返す
+      return evaluate(board, player); // 葉の評価値を返す
     }
 
     if (maximizingPlayer) {
@@ -420,15 +564,20 @@ const Board = () => {
       // 全ての可能な手に対して評価値を計算し、最大評価値を選択する
       for (let i = 0; i < availableMoves.length; i++) {
         const move = availableMoves[i]; // i 番目の手を選択する
+
         const newBoard = makeMove(board, move.row, move.col, player); // 石を置く
+
+        // 石を置いたあとの相手の局面を評価
+        const opponent = player === "black" ? "white" : "black";
         const evalResult = minimax(
           newBoard,
-          player === "black" ? "white" : "black",
+          opponent,
           depth - 1,
           alpha,
           beta,
           false
-        ); // 石を置いたあとの相手の局面
+        );
+
         maxEval = Math.max(maxEval, evalResult);
         alpha = Math.max(alpha, evalResult);
 
@@ -447,15 +596,20 @@ const Board = () => {
       // 全ての可能な手に対して評価値を計算し、最小評価値を選択する
       for (let i = 0; i < availableMoves.length; i++) {
         const move = availableMoves[i]; // i 番目の手を選択する
+
         const newBoard = makeMove(board, move.row, move.col, player); // 石を置く
+
+        // 石を置いたあとの相手の局面を評価
+        const opponent = player === "black" ? "white" : "black";
         const evalResult = minimax(
           newBoard,
-          player === "black" ? "white" : "black",
+          opponent,
           depth - 1,
           alpha,
           beta,
           true
-        ); // 石を置いたあとの相手の局面
+        );
+
         minEval = Math.min(minEval, evalResult);
         beta = Math.min(beta, evalResult);
 
@@ -469,40 +623,61 @@ const Board = () => {
     }
   };
 
+  const isSelfDefeatingMove = (board, player) => {
+    const opponent = player === "black" ? "white" : "black";
+
+    // 相手の手を列挙する
+    const opponentMoves = getValidMoves(board, opponent);
+
+    // 相手の手を試してみて、自滅する手があるかどうかを確認する
+    for (let i = 0; i < opponentMoves.length; i++) {
+      const opponentMove = opponentMoves[i];
+      const tempBoardAfterOpponentMove = makeMove(
+        board,
+        opponentMove.row,
+        opponentMove.col,
+        opponent
+      );
+      const playerStoneCount = countStones(tempBoardAfterOpponentMove, player);
+
+      // プレイヤーの石が全滅するかどうかをチェック
+      if (playerStoneCount === 0) {
+        // 全滅する場合、避けるべき手として扱う
+        return true;
+      }
+    }
+
+    return false;
+  };
+
   /**
    * 盤面の評価値を計算します。
    *
    * @param {Array<Array<string|null>>} board - 盤面の状態を表す2次元配列
    * @returns {number} 盤面の評価値
    */
-  const evaluate = (board) => {
-    // プレイヤーごとの重み付け係数
-    const weights = {
-      black: -1,
-      white: 1,
-    };
-
-    // 各セルの価値を格納する配列
-    const cellValues = [
-      [30, -12, 0, -1, -1, 0, -12, 30],
-      [-12, -15, -3, -3, -3, -3, -15, -12],
-      [0, -3, 0, -1, -1, 0, -3, 0],
-      [-1, -3, -1, -1, -1, -1, -3, -1],
-      [-1, -3, -1, -1, -1, -1, -3, -1],
-      [0, -3, 0, -1, -1, 0, -3, 0],
-      [-12, -15, -3, -3, -3, -3, -15, -12],
-      [30, -12, 0, -1, -1, 0, -12, 30],
-    ];
-
+  const evaluate = (board, player) => {
     let score = 0;
 
-    // 盤面を走査して各セルの価値を評価に加算
-    for (let row = 0; row < boardSize; row++) {
-      for (let col = 0; col < boardSize; col++) {
-        if (board[row][col] === "black") {
-          score += cellValues[row][col] * weights.black;
-        } else if (board[row][col] === "white") {
-          score += cellValues[row][col] * weights.white;
+    if (gamePhase === "end") {
+      //      const opponent = player === "black" ? "white" : "black";
+      //      score = countStones(board, player) - countStones(board, opponent);
+      score = countStones(board, "black") - countStones(board, "white");
+    } else {
+      // プレイヤーごとの重み付け係数
+      const weights = {
+        white: 1,
+        black: -1,
+      };
+
+      // 盤面を走査して各セルの価値を評価に加算
+      for (let row = 0; row < boardSize; row++) {
+        for (let col = 0; col < boardSize; col++) {
+          if (board[row][col] === "black") {
+            score += cellValues[row][col] * weights.black;
+          } else if (board[row][col] === "white") {
+            score += cellValues[row][col] * weights.white;
+          }
         }
       }
     }
@@ -524,6 +699,7 @@ const Board = () => {
           move.col,
           currentPlayer
         );
+        recordGame(move.row, move.col);
         setBoardState(newBoard);
       }
       setIsComputerTurn(false);
@@ -549,6 +725,16 @@ const Board = () => {
     const whiteStones = countStones(boardState, "white");
     setBlackCount(blackStones);
     setWhiteCount(whiteStones);
+    const newGamePhase = determineGamePhase(
+      moves,
+      blackStones,
+      whiteStones,
+      boardSize
+    );
+    if (gamePhase !== newGamePhase) {
+      setGamePhase(newGamePhase);
+    }
+
     const gameOver = checkGameOver(boardState);
     if (gameOver) {
       // ゲームオーバーの処理を実行する
@@ -617,9 +803,13 @@ const Board = () => {
         <div className="board">{renderIndices()}</div>
       </div>
       <div className="score-container">
+        <div>Player: {currentPlayer}</div>
+        <div>Game Phase: {gamePhase} </div>
         {/* 石の数の表示部分 */}
         <div>Black Stones: {blackCount}</div>
         <div>White Stones: {whiteCount}</div>
+        <div>Move History</div>
+        <div>{renderMoveHistory()}</div>
       </div>
     </div>
   );
