@@ -1,5 +1,27 @@
 import React, { useEffect } from "react";
 
+/* TODO
+ *
+ *
+ * 1. 盤面評価関数の学習: Deep Learningを使用して、盤面の評価値を予測する評価関数を学習する。
+ *    盤面の特徴量を入力とし、各マスの評価値を出力するネットワークを構築する。この学習済みの
+ *    モデルを使用して、探索アルゴリズムにおいて評価値を参考にすることで、より強力な戦略を獲得
+ *    できるんじゃないかと。
+ *
+ * 2. モンテカルロ木探索の補助: Deep Learningを使用して、モンテカルロ木探索の展開段階で
+ *    子ノードの評価値を予測する。モンテカルロシミュレーションを行う代わりに、学習済みのモデル
+ *    を使用して子ノードの評価値を推定し、探索の効率を向上させる。
+ *
+ * 3. 局面評価の補助: ゲームの進行に応じて、現在の局面の評価値を予測するモデルを使用する。
+ *    例えば、ゲームのフェーズに応じて異なるモデルを使用することで、序盤と終盤で異なる戦略を取る。
+ *
+ * 4. Web3の利用： Solidityなどのスマートコントラクト言語を使用して、オセロゲームのルールと
+ *    ロジックを実装したスマートコントラクトを作成する。このコントラクトでは、ゲームの盤面の状態を
+ *    管理し、プレイヤーの手番や石の配置などのゲームの進行を制御する。
+ *
+ * 5.
+ */
+
 /* global BigInt */
 
 const BOARD_SIZE = 8;
@@ -131,6 +153,10 @@ const openingBook = [
 
   { name: "naname1", move: "F4", next: "naname2" }, // F5F6E6F4
   { name: "naname2", move: "E3", next: "ushi" }, // F5F6E6F4E3
+  { name: "naname2", move: "G6", next: "hebi" }, // F5F6E6F4G6
+  { name: "hebi", move: "C5", next: "hebi1" }, // F5F6E6F4G6C5G4G5
+  { name: "hebi1", move: "G4", next: "hebi2" }, // F5F6E6F4G6C5G4G5
+  { name: "hebi2", move: "G5", next: null }, // F5F6E6F4G6C5G4G5
   //{ name: "naname2", move: "C3", next: "buffalo" }, // F5F6E6F4C3
   //{ name: "naname2", move: "G4", next: "tanuki" }, // F5F6E6F4G4
   //{ name: "naname2", move: "F3", next: "uratanuki" }, // F5F6E6F4F3
@@ -237,18 +263,23 @@ const convertBookCoordinate = (pos) => {
  * @type {number[][]>} 評価値配列
  */
 const cellValues = [
-  [100, -40, 20, 5, 5, 20, -40, 100],
-  [-40, -100, -1, -1, -1, -1, -100, -40],
-  [20, -1, 5, 1, 1, 5, -1, 20],
-  [5, -1, 1, 0, 0, 1, -1, 5],
-  [5, -1, 1, 0, 0, 1, -1, 5],
-  [20, -1, 5, 1, 1, 5, -1, 20],
-  [-40, -100, -1, -1, -1, -1, -100, -40],
-  [100, -40, 20, 5, 5, 20, -40, 100],
+  [30, -12, 0, -1, -1, 0, -12, 30],
+  [-12, -15, -3, -3, -3, -3, -15, -12],
+  [0, -3, 0, -1, -1, 0, -3, 0],
+  [-1, -3, -1, -1, -1, -1, -3, -1],
+  [-1, -3, -1, -1, -1, -1, -3, -1],
+  [0, -3, 0, -1, -1, 0, -3, 0],
+  [-12, -15, -3, -3, -3, -3, -15, -12],
+  [30, -12, 0, -1, -1, 0, -12, 30],
 ];
 
 /**
  * 指定されたプレイヤーのビットボードと相手のビットボードから、配置可能な手の配列を取得します。
+ *
+ * 　１つ以上、続して隣接する相手の石の隣が空いていればそこに石が置ける。
+ * 　隣接する相手の石は、プレイヤーの石ビットをシフトして、相手の石ボードとの積をとればわかる。
+ * 　ただし、ビット列では、左端の石が一つ上の右端の石と連続しているので、そのような連続を断ち切る
+ * 　ために、番人マスクをする。
  *
  * @param {object} board - ゲームの盤面状態を示すオブジェクト
  * @param {string} player - プレイヤー
@@ -672,7 +703,9 @@ const negascout = (board, player, evalfunc, depth, alpha, beta) => {
 const midEval = (board, player) => {
   const playerBoard = board[player === 1 ? "black" : "white"];
   const opponentBoard = board[player === 1 ? "white" : "black"];
-  let playerCount = countStones(getValidMoves(board, player)) << 2; // 着手可能な手が多い方が有利
+
+  // 着手可能な手が多い方が有利
+  let playerCount = countStones(getValidMoves(board, player)) << 2;
   let opponentCount = countStones(getValidMoves(board, -player)) << 2;
 
   // 盤面を走査して各セルの価値を評価に加算
@@ -687,6 +720,45 @@ const midEval = (board, player) => {
       }
     }
   }
+
+  // 隅を取ったあとでも、評価テーブルでは隅の周辺は点数が低くなってしまうので、
+  // 隅が取れている場合は、補完する。
+
+  // 左上隅周辺
+  playerCount += playerBoard & 0x0000000000000003n ? -cellValues[0][1] : 0;
+  playerCount += playerBoard & 0x0000000000000201n ? -cellValues[1][1] : 0;
+  playerCount += playerBoard & 0x0000000000000101n ? -cellValues[1][0] : 0;
+  opponentCount += opponentBoard & 0x0000000000000003n ? -cellValues[0][1] : 0;
+  opponentCount += opponentBoard & 0x0000000000000201n ? -cellValues[1][1] : 0;
+  opponentCount += opponentBoard & 0x0000000000000101n ? -cellValues[1][0] : 0;
+
+  // 右上隅周辺
+  playerCount += playerBoard & 0x00000000000000c0n ? -cellValues[0][6] : 0;
+  playerCount += playerBoard & 0x0000000000004080n ? -cellValues[1][6] : 0;
+  playerCount += playerBoard & 0x0000000000008080n ? -cellValues[1][7] : 0;
+  opponentCount += opponentBoard & 0x00000000000000c0n ? -cellValues[0][6] : 0;
+  opponentCount += opponentBoard & 0x0000000000004080n ? -cellValues[1][6] : 0;
+  opponentCount += opponentBoard & 0x0000000000008080n ? -cellValues[1][7] : 0;
+
+  // 左下隅周辺
+  playerCount += playerBoard & 0x0300000000000000n ? -cellValues[7][1] : 0;
+  playerCount += playerBoard & 0x0102000000000000n ? -cellValues[6][1] : 0;
+  playerCount += playerBoard & 0x0101000000000000n ? -cellValues[6][0] : 0;
+  opponentCount += opponentBoard & 0x0300000000000000n ? -cellValues[7][1] : 0;
+  opponentCount += opponentBoard & 0x0102000000000000n ? -cellValues[6][1] : 0;
+  opponentCount += opponentBoard & 0x0101000000000000n ? -cellValues[6][0] : 0;
+
+  // 右下隅周辺
+  playerCount += playerBoard & 0xc000000000000000n ? -cellValues[7][6] : 0;
+  playerCount += playerBoard & 0x8040000000000000n ? -cellValues[6][6] : 0;
+  playerCount += playerBoard & 0x8080000000000000n ? -cellValues[6][7] : 0;
+  opponentCount += opponentBoard & 0xc000000000000000n ? -cellValues[7][6] : 0;
+  opponentCount += opponentBoard & 0x8040000000000000n ? -cellValues[6][6] : 0;
+  opponentCount += opponentBoard & 0x8080000000000000n ? -cellValues[6][7] : 0;
+
+  // TODO
+  // 確定石が多い方が優勢なので、確定石の数を評価に入れる
+  //
 
   return playerCount - opponentCount;
 };
@@ -898,6 +970,10 @@ const Board = () => {
   const [whiteCount, setWhiteCount] = React.useState(2);
   const [gamePhase, setGamePhase] = React.useState("early");
   const [bookStatus, setBookStatus] = React.useState("1st");
+  const [moves, setMoves] = React.useState([
+    { board: boardState, stoneColor: currentPlayer, move: -1 },
+    { board: boardState, stoneColor: currentPlayer, move: -1 },
+  ]); // 手の配列
 
   /**
    * 盤面の状態を監視し、各プレイヤーの石の数を更新し、ゲーム終了時の処理を実行します。
@@ -945,6 +1021,7 @@ const Board = () => {
 
         if (move >= 0) {
           newBoard = flipStone(newBoard, currentPlayer, move);
+          recordGame(newBoard, move);
           setBoardState(newBoard);
         }
       } while (!getValidMoves(newBoard, -currentPlayer) && move >= 0);
@@ -952,6 +1029,31 @@ const Board = () => {
       setCurrentPlayer(-currentPlayer);
     }
   }, [isComputerTurn, currentPlayer]);
+
+  /**
+   * ユーザーの手を記録する関数
+   * @param {object} board
+   * @param {number} pos - 石の位置(0～63)
+   * @returns {void}
+   */
+  const recordGame = (board, pos) => {
+    const stoneColor = currentPlayer;
+    const move = convertBookCoordinate(pos); // 定石の座標系に変換
+    const newMove = { board, stoneColor, move };
+    setMoves((prevMoves) => [...prevMoves, newMove]);
+  };
+
+  /**
+   * 手の履歴を表示する関数
+   * @returns {JSX.Element[]} 手の履歴の要素の配列
+   */
+  const renderMoveHistory = () => {
+    return moves.map((move, index) => (
+      <div key={index}>
+        Move {index + 1}: {move.stoneColor === 1 ? "●" : "〇"} {move.move}
+      </div>
+    ));
+  };
 
   const checkValidMove = (rowIndex, colIndex) => {
     const pos = BigInt(rowIndex * BOARD_SIZE + colIndex);
@@ -980,6 +1082,7 @@ const Board = () => {
       // 石を置く処理を実行
       const move = rowIndex * BOARD_SIZE + colIndex;
       const newBoard = flipStone(boardState, currentPlayer, move);
+      recordGame(newBoard, move);
       setBoardState(newBoard);
 
       // 初手を F5 とするボードの向きを得る
@@ -1046,8 +1149,8 @@ const Board = () => {
     );
   };
 
-  const renderIndices = () => {
-    const validMoves = getValidMoves(boardState, currentPlayer);
+  const renderIndices = (board, player) => {
+    const validMoves = getValidMoves(board, player);
     const columnIndices = Array.from({ length: BOARD_SIZE }, (_, i) =>
       String.fromCharCode(97 + i)
     );
@@ -1071,8 +1174,8 @@ const Board = () => {
             {Array.from({ length: BOARD_SIZE }, (_, colIndex) => {
               const position = rowIndex * BOARD_SIZE + colIndex;
               const isValidMove = (validMoves >> BigInt(position)) & 1n;
-              const blackStone = (boardState.black >> BigInt(position)) & 1n;
-              const whiteStone = (boardState.white >> BigInt(position)) & 1n;
+              const blackStone = (board.black >> BigInt(position)) & 1n;
+              const whiteStone = (board.white >> BigInt(position)) & 1n;
               let cell = null;
               if (blackStone) {
                 cell = "black";
@@ -1098,7 +1201,7 @@ const Board = () => {
   return (
     <div className="game-board">
       <div className="board-container">
-        <div className="board">{renderIndices()}</div>
+        <div className="board">{renderIndices(boardState, currentPlayer)}</div>
       </div>
       <div className="score-container">
         <div>Player: {currentPlayer === 1 ? "black" : "white"}</div>
@@ -1106,7 +1209,16 @@ const Board = () => {
         {/* 石の数の表示部分 */}
         <div>Black Stones: {blackCount}</div>
         <div>White Stones: {whiteCount}</div>
+      </div>
+      <div className="board-container">
+        <div className="board">
+          {renderIndices(
+            moves[moves.length - 2].board,
+            -moves[moves.length - 2].stoneColor
+          )}
+        </div>
         <div>Move History</div>
+        <div>{renderMoveHistory()}</div>
         {/* １手先の局面の表示部分
         <div>Next Moves:</div>
         <div className="next-moves">
